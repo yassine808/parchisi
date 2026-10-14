@@ -2,3 +2,7 @@ launcher.log
 _build/
 *.log
 
+# Build artifacts. ~800 MB of WSA + APK payload. Never commit: git history is
+# permanent, so a later delete would NOT recover the space or un-leak the data.
+payload/
+
