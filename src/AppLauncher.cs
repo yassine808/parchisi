@@ -758,7 +758,12 @@ namespace Parchisi
 
             bool created;
             Mutex mtx = null;
-            try { mtx = new Mutex(true, "Global\\\\PlayParchisiLauncher", out created); }
+            // NB: "Global\\Name" - exactly two backslashes in the C# source, one in the
+            // string. Four ("Global\\\\Name") builds the name "Global\\Name", which is
+            // not a legal kernel-object name: the constructor throws, every launch dies
+            // on exit code 2, and the catch below logs it and returns with no window at
+            // all - the exe appears to do nothing. Caught on the first clean-machine run.
+            try { mtx = new Mutex(true, "Global\\PlayParchisiLauncher", out created); }
             catch (Exception ex)
             {
                 // Assuming exclusivity after a FAILURE was backwards: if the mutex cannot
