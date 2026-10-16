@@ -1,8 +1,20 @@
-launcher.log
-_build/
+# Build output - rebuild with tools\build.ps1, never committed.
+dist/
+
+# Runtime logs written next to the exe.
 *.log
 
-# Build artifacts. ~800 MB of WSA + APK payload. Never commit: git history is
-# permanent, so a later delete would NOT recover the space or un-leak the data.
-payload/
+# Scratch dirs used by the build (AssemblyInfo.cs).
+_build/
 
+# OS noise
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*~

@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Eight independent checks. Every text check runs tools\ci\check.ps1 on a Windows
+# runner so CI exercises the same Windows PowerShell 5.1 the local runs use -
+# not pwsh, whose regex and encoding quirks differ.
+jobs:
+  build:
+    name: "check 1/8 - build the exe"
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File tools\build.ps1 -Version 0.0.0
+      - name: Assert the exe was produced and reports the version we asked for
+        shell: powershell
+        run: |
+          $exe = 'dist\PlayParchisi.exe'
+          if (-not (Test-Path -LiteralPath $exe)) { Write-Output "FAIL  $exe was not produced"; exit 1 }
+          $len = (Get-Item -LiteralPath $exe).Length
+          if ($len -lt 100KB) { Write-Output "FAIL  exe is only $len bytes, expected a full launcher"; exit 1 }
+          $an = [Reflection.AssemblyName]::GetAssemblyName((Resolve-Path -LiteralPath $exe))
+          if ($an.Version.ToString() -ne '0.0.0.0') {
+            Write-Output "FAIL  assembly version $($an.Version), expected 0.0.0.0 (a released exe must never report 0.0.0.0)"
+            exit 1
+          }
+          Write-Output "PASS  exe $len bytes, assembly $($an.Version)"
+
+  hygiene:
+    name: "check 2/8 - hygiene: shipped files stay clean"
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: powershell -NoProfile -ExecutionPolicy Bypass -File tools\ci\check.ps1 -Check hygiene
+
+  manifest:
+    name: "check 3/8 - manifest: self-elevate + PerMonitorV2"
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: powershell -NoProfile -ExecutionPolicy Bypass -File tools\ci\check.ps1 -Check manifest
+
+  readme:
+    name: "check 4/8 - readme: every relative link resolves"
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: powershell -NoProfile -ExecutionPolicy Bypass -File tools\ci\check.ps1 -Check readme
+
+  dialogs:
+    name: "check 5/8 - dialogs: no MessageBox outside the allowlist"
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: powershell -NoProfile -ExecutionPolicy Bypass -File tools\ci\check.ps1 -Check dialogs
+
+  tray:
+    name: "check 6/8 - tray: statuses fit the 63-char budget"
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: powershell -NoProfile -ExecutionPolicy Bypass -File tools\ci\check.ps1 -Check tray
+
+  icon:
+    name: "check 7/8 - icon: valid ICO header"
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: powershell -NoProfile -ExecutionPolicy Bypass -File tools\ci\check.ps1 -Check icon
+
+  source:
+    name: "check 8/8 - source: port constraints still hold"
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: powershell -NoProfile -ExecutionPolicy Bypass -File tools\ci\check.ps1 -Check source

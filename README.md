@@ -1,124 +1,200 @@
-# Parchisi STAR launcher
+# Parchisi STAR — one-exe launcher for Windows
 
-One double-click that boots the whole chain for Parchisi STAR Online running under
-Windows Subsystem for Android (WSA).
+A single double-clickable `PlayParchisi.exe` that takes a plain Windows 11 PC from
+"nothing installed" to "Parchisi STAR is running". It checks the machine, fetches
+what it is missing, installs the game, and leaves when the game closes.
+
+There is no installer, no driver, no service, no registry editing and no folder to
+clean up. It is one file, it tells you what it is doing, and it logs everything.
+
+---
+
+## Download
+
+Grab `PlayParchisi.exe` from the
+[latest release](https://github.com/yassine808/parchisi/releases/latest)
+and double-click it.
+
+The exe is self-elevating: Windows will show a UAC prompt, because registering the
+Android subsystem needs administrator rights. That is the only thing the launcher
+asks of you up front.
+
+> **Name is load-bearing.** The file must stay `PlayParchisi.exe`. Antivirus
+> heuristics key on the filename when deciding that a process is spawning the
+> Windows Subsystem for Android's client, and a generic name makes that verdict
+> more likely. If you rename it and it stops working, rename it back.
+
+---
 
 ## What it does
 
-**Provisioning phase** (only runs when WSA is absent — triggers a UAC prompt, then
-resumes by itself via `RunOnce` if a reboot is needed):
+The launcher runs **12 checks in order**. Every check either passes, or fails with
+a window naming the check, the cause and what to do about it. Nothing is guessed.
 
-1. Refuses on Windows builds below 22000 (WSA needs Windows 11).
-2. Enables `VirtualMachinePlatform` if it is off. That is the one step needing a
-   reboot: it writes `HKLM\...\RunOnce` and restarts in 60s (click the window to
-   cancel), then resumes on its own at the next logon.
-3. Stages `C:\WSA` — uses an existing folder if present, otherwise extracts
-   `payload\wsa.zip`.
-4. Registers it with
-   `Add-AppxPackage -DisableDevelopmentMode -Register C:\WSA\AppxManifest.xml`.
+| # | Check | What it verifies |
+|---|-------|------------------|
+| 1 | Administrator rights | Running elevated (UAC) |
+| 2 | Windows 11 | Build 22000 or newer — WSA does not exist on Windows 10 |
+| 3 | virtualization | VT-x / AMD-V on, Virtual Machine Platform enabled |
+| 4 | Developer Mode | Turned on so the Android bridge can be used |
+| 5 | WSA payload | The Android subsystem archive is present, or is downloaded |
+| 6 | WSA dependencies | The runtime packages WSA needs |
+| 7 | WSA registration | The subsystem is registered with Windows |
+| 8 | userdata template | The virtual disk template the subsystem boots from |
+| 9 | WsaService | The background service that runs the subsystem |
+| 10 | WSA boot | The subsystem actually boots to a usable state |
+| 11 | game files + install | The game APKs are fetched and installed |
+| 12 | launch | The game starts and its window appears |
 
-**Launch phase** (always, never elevated):
+Once the game window is gone, the launcher exits — it stays alive only as long as
+the game does, so it never sits in the background holding anything.
 
-5. Checks whether WSA's adb bridge is listening on `127.0.0.1:58526`.
-6. If not, cold-boots WSA via `WsaClient.exe /launch wsa://<package>` (retries up to
-   3x, 120s each).
-7. Waits for Android's `activity` system service — the adb port comes up *before* the
-   framework finishes registering, so firing too early fails with
-   `Can't find service: activity`.
-8. Installs the game if missing, **and re-installs it if the PNG texture split is
-   absent** (`split_config.etc1_rgb8_group_hd.apk`; the `.astc` split renders black).
-9. Installs Firefox if missing and sets it as the default browser
-   (`cmd role add-role-holder android.app.role.BROWSER`), which is what makes
-   Facebook login work.
-10. Launches the game, retrying on `Error type 3: Activity class does not exist`
-    (package manager still settling).
-11. Watches window focus for 2 minutes. The game auto-fires a Facebook login on
-    startup which backgrounds it, and WSA reaps backgrounded apps within ~20s — so it
-    presses BACK, but only after the game has first held focus (otherwise it spams
-    BACK at the WSA home screen during a cold start).
+Every run writes `launcher.log` beside the exe, with a timestamp on each line. If
+a check fails, the log has the detail and the failure window has a button to open
+it.
 
-On success the process exits with **no window ever shown**; the log window appears
-only if something fails. Steps 8 and 9 are cheap no-ops on an already-installed
-machine, and the whole provisioning phase is a file-exists check there, so a normal
-launch never prompts for UAC.
+---
 
-Progress is written to `launcher.log` next to the exe.
+## What it downloads, and when it asks
 
-## Contents
+The launcher will not download anything without asking you first. Two questions,
+both showing the exact size and the source before you agree:
 
-| file | purpose |
-|---|---|
-| `PlayParchisi.exe` | the launcher, game icon embedded |
-| `ParchisiLauncher.cs` | source |
-| `parchisi.ico` | icon resource |
-| `adb.exe` + `AdbWinApi.dll` + `AdbWinUsbApi.dll` | bundled platform-tools |
-| `payload/` | **gitignored** build artifacts: `wsa.zip` + the game and Firefox APKs |
-| `PROMPT.md` | full reproduction brief for an AI agent |
-| `tools/build-wsa-payload.ps1` | builds `payload\wsa.zip` from `C:\WSA` |
+1. **The Windows Subsystem for Android** — roughly **0.70 GB**. Microsoft
+   discontinued WSA, so there is no official source; this comes from the community
+   build at [`MustardChef/WSABuilds`](https://github.com/MustardChef/WSABuilds).
+   The launcher picks the GApps x64 build from the newest release.
 
-adb is bundled deliberately: it normally lives in `%TEMP%`, which Windows wipes
-automatically, and a launcher depending on it breaks silently on a later run.
+2. **The game files** — the game APKs, Firefox and the `adb` installer tool,
+   bundled as one `ParchisiPayload.zip` from this repository's own
+   [releases](https://github.com/yassine808/parchisi/releases).
 
-## Building
+Both questions name the size in GB — not MB, because "713 MB" reads as small right
+up until it is 0.7 GB of your bandwidth — and both offer the source as a link so
+you can look before you commit.
 
-Windows' built-in C# compiler, no .NET SDK or Python required:
+If you decline, the launcher stops having changed nothing. If a download is
+interrupted, it resumes rather than starting over, and when it finishes it is
+checked against the size and the SHA-256 published on the release.
 
-```powershell
-$csc = 'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe'
-$tmp = "$env:TEMP\opencode\_build\PlayParchisi.exe"   # csc cannot write here (see Avast)
-New-Item -ItemType Directory -Path (Split-Path $tmp) -Force | Out-Null
-& $csc /nologo /target:winexe /optimize+ /win32icon:parchisi.ico `
-       /r:System.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll `
-       /r:System.IO.Compression.dll /r:System.IO.Compression.FileSystem.dll `
-       /out:"$tmp" ParchisiLauncher.cs
-Copy-Item $tmp .\PlayParchisi.exe -Force
+Already-downloaded files are reused, so a second run costs nothing.
+
+---
+
+## Why Firefox is in there
+
+The game's own built-in browser is too old for Facebook: the WebView reports a
+user agent Facebook rejects, so **logging in through the game fails**.
+
+The launcher therefore installs Firefox as well and makes it the default browser
+inside Android, so a login tap opens in a browser that Facebook accepts. This step
+is best-effort — if it fails, the game still runs and you just cannot log in with
+Facebook.
+
+---
+
+## The texture split, and why the game would be black without it
+
+Android games ship their graphics in two texture formats. The game's `.astc`
+textures render **black** inside WSA, and the fix is to install the PNG-textured
+split: `split_config.etc1_rgb8_group_hd.apk`.
+
+That file is mandatory. The launcher checks for it after installing (and re-installs
+if it is missing), so a run either has it or tells you why it could not.
+
+---
+
+## Configuration
+
+Everything has a sensible default, so most people never touch this. Settings are
+read in this order, each overriding the last:
+
+```
+defaults  <  launcher.config  <  environment  <  command line
 ```
 
-`csc` here is **C# 5 only** — no `$"..."` interpolation, no `?.`, no `out var`.
+Create `launcher.config` beside the exe with one `key=value` per line (a `#` starts
+a comment):
 
-The two `System.IO.Compression*` references are required for the `payload\wsa.zip`
-extraction step. `/target:winexe` sets PE subsystem 2, which makes a console window
-structurally impossible.
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `WsaRoot` | `C:\WSA` | Where the subsystem is installed |
+| `WsaUrl` | *(empty)* | Direct URL for the WSA archive, skipping release lookup |
+| `Repo` | `MustardChef/WSABuilds` | Where to find the WSA archive |
+| `Sha256` | *(empty)* | Expected hash when using `WsaUrl` |
+| `PayloadRepo` | `yassine808/parchisi` | Where to find the game files |
+| `PayloadUrl` | *(empty)* | Direct URL for the game files, skipping release lookup |
+| `BootTimeoutMin` | `10` | Minutes to wait for the subsystem to boot |
+| `InstallTimeoutMin` | `30` | Minutes to wait for the install |
+| `GameWindowTitle` | `Parchisi` | Substring of the game window title, used to confirm launch |
 
-## Avast caveats
+Environment variables use the `PP_` prefix — `PP_WSA_ROOT`, `PP_WSA_URL`,
+`PP_WSA_REPO`, `PP_WSA_SHA256`, `PP_PAYLOAD_URL` — and command-line flags use
+`--Key=value`, for example `--yes` to pre-approve the download questions or
+`--WsaUrl=...` to point at a local copy.
 
-Two separate blockers hit during development, both from Avast:
+Setting `GITHUB_TOKEN` in the environment raises the rate limit when the launcher
+asks GitHub which release to pull from.
 
-- **Behavioral IDP** flagged the first build as `IDP.Generic` (quarantined as
-  `ChestId 0000006E`) roughly 24 seconds after it spawned `WsaClient.exe`.
-- **Path-level block** — after quarantining, Avast kept denying creation of that exact
-  filename. Reproduced by copying Microsoft-signed `where.exe` to the same name and
-  watching it get denied too, which proved the trigger was the *name*, not the content.
-  Hence `PlayParchisi.exe`.
-- `csc.exe` writing directly into the folder is also intercepted, so the build outputs
-  to a temp directory and the finished exe is copied over.
+---
 
-Add the folder to Avast exclusions if you rebuild.
+## Building from source
 
-## Prerequisites
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\build.ps1
+```
 
-The launcher provisions most of this itself on a fresh PC; the rest cannot be done
-by software:
+This produces `dist\PlayParchisi.exe`. There are no dependencies to restore and no
+.NET SDK to install: it compiles with the C# compiler that ships inside the
+Windows .NET Framework, and the resulting exe runs on a stock Windows 11 machine.
 
-| Requirement | Handled how |
-|---|---|
-| Windows 11 build 22000+ | checked; refuses otherwise |
-| BIOS virtualization enabled | **cannot be automated** — firmware setting |
-| `VirtualMachinePlatform` feature | launcher enables it (UAC + one reboot) |
-| `C:\WSA` / `payload\wsa.zip` | launcher extracts and registers it |
-| Admin rights for registration | launcher self-elevates once (UAC) |
-| Developer mode in WSA settings | **manual** if the adb port stays dead: toggle it Off → On |
-| Game + Firefox + default browser | launcher installs them over adb |
+The build embeds the game's own icon and a manifest that makes the exe self-elevate
+and declare per-monitor DPI awareness.
 
-Game install specifics:
+---
 
-- Installed via Aurora Store anonymous login (no Google account) — or from
-  `payload\*.apk` as the launcher does.
-- Must be the Play-delivered `split_config.etc1_rgb8_group_hd.apk` (PNG textures),
-  **not** the `.astc` split, which renders black on WSA. The launcher verifies this
-  split is present and re-installs if it is not.
-- Firefox must hold `android.app.role.BROWSER`: WSA's built-in WebView is Chromium
-  118 and Facebook rejects it with "Facebook is not available on this browser".
+## Checks
 
-A normal launch on an already-provisioned PC never asks for UAC and never shows a
-window.
+The same checks CI runs are in one script, so a local run and a pull request
+exercise the same bytes:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\ci\check.ps1 -Check source
+```
+
+| Check | Guards against |
+|-------|----------------|
+| `hygiene` | Personal paths, session temp dirs and unfinished-work markers in the files that ship |
+| `manifest` | Losing `requireAdministrator` (registration fails 0x80073D28) or PerMonitorV2 (prompts draw wrong at non-100% scaling) |
+| `readme` | A relative link or screenshot in this file pointing at something that no longer exists |
+| `dialogs` | A `MessageBox.Show` outside the single-instance notice — an elevated `MessageBox` opens behind your other windows and reads as "the exe did nothing" |
+| `tray` | A tray status string too long for the 63-character budget, which gets cut off silently |
+| `icon` | A missing or malformed `tools\parchisi.ico`, which the build needs |
+| `source` | The exe name, game package or texture split changing, or the Play Store / Google sign-in flow creeping back in |
+
+---
+
+## Troubleshooting
+
+**The failure window says virtualization is off.** Enable virtualization
+(VT-x / AMD-V / SVM) in your BIOS, turn on *Virtual Machine Platform* in Windows,
+reboot, and run it again.
+
+**It says Windows 11 is required.** WSA genuinely does not exist on Windows 10 —
+there is nothing the launcher can do about that.
+
+**A check keeps failing with the same message.** Delete `C:\WSA` and re-run; the
+launcher will download a fresh copy. Read `launcher.log` for the detail behind any
+failure window.
+
+**The game launches but is black.** That is the missing PNG texture split. Delete
+`C:\WSA` and the cache folder (`%LOCALAPPDATA%\Parchisi\cache`) and re-run, so the
+game is installed again with the split present.
+
+**GitHub rate-limits the launcher.** Set `GITHUB_TOKEN` in your environment.
+
+---
+
+## Licence
+
+[MIT](LICENSE).
