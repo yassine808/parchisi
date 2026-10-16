@@ -224,6 +224,18 @@ switch ($Check) {
             Fail 'the browser-role handoff to Firefox disappeared'
         }
 
+        # Four backslashes in a row in the SOURCE is a C# string holding TWO, and
+        # in this codebase that is always a mistranscription of an escape: it turned
+        # the single-instance mutex into "Global\\PlayParchisiLauncher", a name no
+        # kernel object will accept, so the constructor threw and every launch died
+        # on exit code 2 with no window - the exe looked like it did nothing. A
+        # clean-machine run is what caught it; this check is what stops it coming
+        # back. Comments are excluded because the comment above that fix quotes the
+        # bad form on purpose.
+        foreach ($bad in @($src | Where-Object { $_ -match '\\\\\\\\' -and $_ -notmatch '^\s*//' })) {
+            Fail ("doubled backslash in a string literal: {0}" -f $bad.Trim())
+        }
+
         # This port deliberately ships no Play Store flow and no Google sign-in:
         # the game, Firefox and adb arrive as one zip and are installed over adb.
         # What was removed is the store/sign-in machinery - opening the store UI,
